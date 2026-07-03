@@ -48,3 +48,8 @@ The data-broker economy exists because it's profitable and legal, and the fines 
 - **State deletion rights** — 19+ US state privacy laws now include them; in the EU/UK, GDPR Art. 17 applies to every broker holding your data. → [state law tracker](https://iapp.org/resources/article/us-state-privacy-legislation-tracker/)
 
 *Facts last verified: 2026-07-03.*
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
