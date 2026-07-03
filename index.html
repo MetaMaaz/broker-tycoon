@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Broker Tycoon — you're the villain now</title>
+<meta name="description" content="An idle game where you run a data brokerage. Every mechanic is a documented industry practice. The game collects nothing — view source.">
+<style>
+/* ---- spreadsheet aesthetic, mobile-first, single column ---- */
+:root{
+  --bg:#f4f4ef; --panel:#fff; --ink:#1a1a1a; --dim:#666; --line:#d8d8d0;
+  --accent:#0b6e4f; --money:#0b6e4f; --heat:#b3261e; --warn:#8a5a00;
+  --btn:#eaeae2; --btn-ink:#1a1a1a; --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box; margin:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:15px; line-height:1.45; padding:0 0 80px}
+main{max-width:560px; margin:0 auto; padding:10px}
+h1{font-size:1.15rem; letter-spacing:.02em}
+h2{font-size:.8rem; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); border-bottom:1px solid var(--line); padding:14px 0 4px; margin-bottom:8px}
+button{font-family:inherit; font-size:.95rem; background:var(--btn); color:var(--btn-ink); border:1px solid #bbb; border-bottom-width:3px; border-radius:6px; padding:10px 12px; cursor:pointer; touch-action:manipulation}
+button:active{border-bottom-width:1px; transform:translateY(2px)}
+button:disabled{opacity:.45; cursor:not-allowed; transform:none}
+button:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.spacer{flex:1}
+/* HUD */
+#hud{position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:2px solid var(--ink); padding:8px 10px; font-size:.85rem}
+#hud .grid{display:grid; grid-template-columns:1fr 1fr; gap:2px 14px}
+#hud b{font-weight:700}
+.money{color:var(--money)} .heat{color:var(--heat)}
+#scrutbar{height:10px; background:#e5e5dc; border:1px solid var(--line); border-radius:5px; overflow:hidden; margin-top:5px}
+#scrutfill{height:100%; width:0%; background:linear-gradient(90deg,#c9a227,var(--heat)); transition:width .3s}
+.silent{color:var(--dim); font-size:.75rem; margin-top:4px}
+/* item cards */
+.item{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px}
+.item .name{font-weight:700}
+.item .meta{color:var(--dim); font-size:.8rem}
+.item .buy{min-width:110px; text-align:center}
+.item.owned-0 .name{color:var(--dim)}
+details.real{margin-top:6px; font-size:.8rem}
+details.real summary{cursor:pointer; color:var(--warn); font-weight:700; list-style:none}
+details.real summary::before{content:"REAL: "; }
+details.real[open] summary{margin-bottom:4px}
+details.real .card{background:#fdf6e3; border:1px solid #e6d9a8; border-radius:6px; padding:8px}
+details.real a{color:var(--warn)}
+/* segment toggles */
+.seg .buy[aria-pressed="true"]{background:var(--ink); color:#fff}
+.sens{font-size:.72rem; padding:1px 6px; border-radius:4px; border:1px solid var(--line)}
+.sens.hi{background:#fbe9e7; border-color:#e5b4ae; color:var(--heat)}
+/* dialogs */
+dialog{border:2px solid var(--ink); border-radius:10px; max-width:520px; width:calc(100% - 32px); padding:16px; font-family:var(--mono); background:var(--panel); color:var(--ink)}
+dialog::backdrop{background:rgba(20,20,20,.55)}
+dialog h3{margin-bottom:8px; font-size:1rem}
+dialog .choices{display:flex; flex-direction:column; gap:8px; margin-top:12px}
+/* mirror finale */
+#mirror{white-space:pre-wrap; background:#111; color:#c9f0c9; padding:14px; border-radius:8px; font-size:.82rem; max-height:55vh; overflow:auto}
+.bleak{color:var(--dim); font-size:.85rem; margin-top:10px}
+#catalogList{max-height:50vh; overflow:auto}
+#catalogList .item{padding:8px}
+input[type=search]{width:100%; padding:10px; font-family:inherit; font-size:1rem; border:1px solid var(--line); border-radius:6px; margin-bottom:8px}
+/* start screen */
+#start{position:fixed; inset:0; background:var(--bg); z-index:20; overflow:auto}
+#start .inner{max-width:560px; margin:0 auto; padding:24px 16px}
+#start .jur{width:100%; text-align:left; margin-top:10px; padding:14px}
+.tick{font-variant-numeric:tabular-nums}
+footer{max-width:560px; margin:24px auto 0; padding:0 10px; color:var(--dim); font-size:.75rem}
+.pulse{animation:pulse .6s ease}
+@keyframes pulse{0%{transform:scale(1)}30%{transform:scale(1.06)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important; transition:none!important}
+}
+canvas#newsCanvas{width:100%; border:1px solid var(--line); border-radius:6px; background:#fff}
+.hidden{display:none!important}
+#selfcheck{font-size:.7rem}
+#selfcheck.fail{color:var(--heat); font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- ============ START / JURISDICTION SCREEN ============ -->
+<div id="start">
+  <div class="inner">
+    <h1>BROKER TYCOON 🏢</h1>
+    <p style="margin:10px 0">You run a data brokerage. Buy feeds, merge records into people, sell the people. Win by knowing where 300&nbsp;million of them sleep.</p>
+    <p class="silent">10–15 minutes. Deliberately finite. No saves, no cookies, no retention mechanics — refresh and it's gone. Every mechanic has a <b style="color:var(--warn)">REAL:</b> tag citing the documented industry practice it's modeled on.</p>
+    <div id="runSummary" class="hidden item" style="margin-top:12px"></div>
+    <h2>Pick your jurisdiction</h2>
+    <button class="jur" data-jur="US">🇺🇸 UNITED STATES — normal mode<br><span class="meta" style="color:var(--dim);font-size:.8rem">All feeds available. Fines are a rounding error. This is the documented baseline.</span></button>
+    <button class="jur" data-jur="EU">🇪🇺 EUROPEAN UNION — hard mode<br><span class="meta" style="color:var(--dim);font-size:.8rem">GDPR: credit-header &amp; people-search feeds unbuyable, fines ×20, sensitive segments draw more heat.</span></button>
+    <p class="silent" style="margin-top:14px">This game about harvesting your data harvests none of it. View source.</p>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" aria-live="polite">
+  <div class="row"><b id="coName">Bulk Data Holdings LLC</b><span class="spacer"></span><span id="clock" class="silent"></span></div>
+  <div class="grid tick">
+    <span>💾 records <b id="hRecords">0</b> <span class="silent">(+<span id="hRps">0</span>/s)</span></span>
+    <span>👤 profiles <b id="hProfiles">0</b> <span class="silent">(<span id="hMerge">25</span>% merge rate)</span></span>
+    <span class="money">💰 $<b id="hMoney">250</b> <span class="silent">(+$<span id="hRevs">0</span>/s)</span></span>
+    <span class="heat">🔥 scrutiny <b id="hScrut">0</b>/100</span>
+  </div>
+  <div id="scrutbar"><div id="scrutfill"></div></div>
+  <div class="silent tick">lifetime fines ÷ lifetime revenue = <b id="hRatio">0.0%</b> · people who know you have a file on them: ~0%</div>
+</div>
+
+<main>
+  <div id="investigated" class="hidden item" style="border-color:var(--heat)">
+    ⚠️ <b>UNDER INVESTIGATION</b> — production at 50% while scrutiny ≥ 100. Legal suggests a rebrand.
+  </div>
+
+  <h2>Data feeds <span style="text-transform:none">(records/sec)</span></h2>
+  <div id="feeds"></div>
+
+  <h2>Infrastructure <span style="text-transform:none">(one-time)</span></h2>
+  <div id="upgrades"></div>
+
+  <h2>Segment market <span style="text-transform:none">(toggle to sell — sensitive pays more)</span></h2>
+  <div id="segments"></div>
+
+  <h2>Reputation management</h2>
+  <div class="item">
+    <div class="row">
+      <button id="btnPress" title="">📄 “We Take Your Privacy Seriously™”</button>
+      <button id="btnSecurity" class="hidden">🔒 “We Take Your Security Seriously™”</button>
+      <button id="btnRebrand" disabled>🔄 REBRAND (<span id="rebrandsLeft">3</span> left)</button>
+    </div>
+    <p id="pressOut" class="silent" style="margin-top:8px"></p>
+    <details class="real"><summary>the press-release playbook</summary>
+      <div class="card">Corporate apology boilerplate measurably softens coverage, and rebrands after scandal are standard practice: X-Mode became Outlogic after its ban; the firm behind the 2024 mega-breach operated as “National Public Data,” a trade name of Jerico Pictures Inc. Settlements are booked as a cost line-item. (FTC orders 2024; breach coverage 2024) <a href="https://www.ftc.gov/news-events/news/press-releases/2024/01/ftc-order-prohibits-data-broker-x-mode-social-outlogic-selling-sensitive-location-data" target="_blank" rel="noopener">ftc.gov</a></div>
+    </details>
+  </div>
+
+  <h2>Exhibits</h2>
+  <div class="row">
+    <button id="btnCatalog">🗂 Segment catalog (the real ones)</button>
+  </div>
+
+  <p class="silent" style="margin-top:16px">Advisor, Legal: <i id="legalQuote">“It’s not a sale, it’s a ‘transfer to a marketing partner.’ Approved.”</i></p>
+</main>
+
+<footer>
+  <p>No accounts. No analytics. No cookies. No localStorage. The only data this game touches lives in RAM and dies on refresh. <span id="selfcheck">self-check…</span></p>
+  <p style="margin-top:6px">Facts last verified: 2026-07-03.</p>
+</footer>
+
+<!-- ============ EVENT DIALOG ============ -->
+<dialog id="eventDlg" aria-labelledby="evTitle">
+  <h3 id="evTitle"></h3>
+  <p id="evBody"></p>
+  <details class="real"><summary id="evRealSummary">this happened</summary><div class="card" id="evReal"></div></details>
+  <div class="choices" id="evChoices"></div>
+</dialog>
+
+<!-- ============ CATALOG DIALOG ============ -->
+<dialog id="catalogDlg" aria-labelledby="catTitle">
+  <h3 id="catTitle">Real, publicly listed audience segments</h3>
+  <p class="silent">These are drawn from broker marketing materials, the FTC’s 2014 data-broker report, and the 2013 Senate Commerce investigation. This exhibit is arguably scarier than the game.</p>
+  <input type="search" id="catSearch" placeholder="search segments…" aria-label="Search segments">
+  <div id="catalogList"></div>
+  <div class="choices"><button id="catClose">Close</button></div>
+</dialog>
+
+<!-- ============ MIRROR / WIN DIALOG ============ -->
+<dialog id="winDlg" aria-labelledby="winTitle">
+  <h3 id="winTitle">🏆 TOTAL COVERAGE ACHIEVED</h3>
+  <p>Congratulations. Here is your crown jewel — one fully-resolved sample profile from your database:</p>
+  <div id="mirror" tabindex="0"></div>
+  <p class="bleak" id="mirrorCoda"></p>
+  <div class="choices">
+    <button id="btnExit">🚪 Want out of the real ones?</button>
+    <button id="btnNews">🗞 Print the front page</button>
+    <button id="btnShare">🔗 Copy shareable run link</button>
+  </div>
+  <div id="newsWrap" class="hidden" style="margin-top:10px">
+    <canvas id="newsCanvas" width="800" height="1000"></canvas>
+    <div class="choices"><a id="newsSave" download="broker-tycoon-frontpage.png"><button>Save image</button></a></div>
+  </div>
+  <p class="bleak">No retention mechanics. This game about the attention-and-data economy would rather you go outside. (The real ones would not.)</p>
+</dialog>
+
+<!-- ============ EXIT / EPILOGUE DIALOG ============ -->
+<dialog id="exitDlg" aria-labelledby="exitTitle">
+  <h3 id="exitTitle">The exits exist. They only work if people use them.</h3>
+  <div class="item">
+    <div class="name">California DROP — one request, 600+ brokers</div>
+    <div class="meta">The Delete Act’s Delete Request and Opt-Out Platform went live Jan 1, 2026. One submission orders every registered California data broker to delete your data; brokers must process requests starting Aug 1, 2026 ($200/request/day penalties). CA residents — this is the big one.</div>
+    <a href="https://privacy.ca.gov/drop/" target="_blank" rel="noopener">privacy.ca.gov/drop</a>
+  </div>
+  <div class="item">
+    <div class="name">Global Privacy Control</div>
+    <div class="meta">A browser signal that legally counts as an opt-out of sale/sharing in California, Colorado &amp; other states. Set it once.</div>
+    <a href="https://globalprivacycontrol.org" target="_blank" rel="noopener">globalprivacycontrol.org</a>
+  </div>
+  <div class="item">
+    <div class="name">People-search opt-outs</div>
+    <div class="meta">Google’s “Results about you” removes your info from search; Simple Opt Out maintains direct links to Spokeo, Whitepages, BeenVerified &amp; co.</div>
+    <a href="https://myactivity.google.com/results-about-you" target="_blank" rel="noopener">Results about you</a> · <a href="https://simpleoptout.com" target="_blank" rel="noopener">simpleoptout.com</a>
+  </div>
+  <div class="item">
+    <div class="name">State deletion rights</div>
+    <div class="meta">19+ US state privacy laws now include deletion rights. If you’re in the EU/UK, GDPR Art. 17 erasure requests apply to every broker holding your data.</div>
+    <a href="https://iapp.org/resources/article/us-state-privacy-legislation-tracker/" target="_blank" rel="noopener">state law tracker</a>
+  </div>
+  <p class="silent">Facts last verified 2026-07-03.</p>
+  <div class="choices"><button id="exitClose">Close</button></div>
+</dialog>
+
+<script>
+"use strict";
+/* =====================================================================
+   BROKER TYCOON — single file, vanilla JS, no build, no backend.
+   Collects nothing: no fetch, no localStorage, no cookies. State is RAM.
+
+   BALANCE TARGETS (argue with these numbers — that's the point):
+   - Win condition: 300,000,000 profiles ("Total Coverage")
+   - Target run length: 10–15 min of attentive play (greedy-bot sim: ~12 min)
+   - Merge efficiency: 25% base → 90% max (identity resolution is never
+     perfect). profiles/sec = records-inflow × efficiency; unmerged records
+     pile up as visible backlog. Merge upgrades also reprocess 50% of backlog.
+   - Revenue/sec = profiles × $0.01 × Σ(active segment multipliers)
+     (same person sold over and over — data is a non-rival good; that's real)
+   - Feed cost curve: cost(n) = base × 1.15^n  (monotonic, classic idle)
+   - Scrutiny: heat/sec per feed TYPE × (1+log10(count)) — the 40th car feed
+     angers journalists less than the 1st. Decays 0.15/sec. Press release −7
+     (45s cd); rebrand → 0 (max 3, +30% prod each). At 100+: production ×0.5.
+   - Events gate on BOTH scrutiny ≥ threshold AND elapsed minutes — scandals
+     need time to develop even if you sprint into the red.
+   - Fines: settle = 2% of lifetime revenue (US). EU: ×20. The HUD ratio
+     fines÷revenue is the thesis. It stays small. That's documented.
+   ===================================================================== */
+
+const WIN_PROFILES = 300e6;
+const REV_RATE = 0.01;            // $ per profile per segment-multiplier per sec
+const SCRUT_DECAY = 0.15;         // per sec
+const PRESS_CD = 45, PRESS_DROP = 7;
+const REBRAND_MAX = 3, REBRAND_BOOST = 0.30;
+const COST_GROWTH = 1.15;
+
+/* ---------------- DATA: every entry carries real:{claim,year,source} ---------------- */
+const FEEDS = {
+  loyalty: { name:"Loyalty-card feed", icon:"🛒", base:50, rps:3, scrutiny:0.010,
+    real:{ claim:"Grocery loyalty programs monetize purchase histories. Kroger's data-science arm 84.51° openly sells shopper insights built from loyalty-card data — its own marketing says so.", year:2024, source:"https://www.8451.com/" } },
+  sdk: { name:"App location SDK", icon:"📍", base:600, rps:16, scrutiny:0.045,
+    real:{ claim:"X-Mode (later 'Outlogic') paid app developers to embed its SDK — including in Muslim prayer apps — and sold the location trails. The FTC banned it from selling sensitive location data in 2024.", year:2024, source:"https://www.ftc.gov/news-events/news/press-releases/2024/01/ftc-order-prohibits-data-broker-x-mode-social-outlogic-selling-sensitive-location-data" } },
+  flashlight: { name:"“Free flashlight app” partnerships", icon:"🔦", base:4000, rps:85, scrutiny:0.09,
+    real:{ claim:"The 'Brightest Flashlight' Android app (50M+ downloads) transmitted users' precise location and device ID to ad networks. FTC settlement, 2013. The free-app-as-collection-front is a genre.", year:2013, source:"https://www.ftc.gov/news-events/news/press-releases/2013/12/android-flashlight-app-developer-settles-ftc-charges-it-deceived" } },
+  credit: { name:"Credit-header data", icon:"🏦", base:25000, rps:420, scrutiny:0.14, gdprBlocked:true,
+    real:{ claim:"Credit bureaus sell 'header' data — names, addresses, SSN-linked identifiers — to brokers and people-search sites, outside the credit-privacy protections of FCRA. Sen. Wyden has pressed the CFPB to close this loophole.", year:2023, source:"https://www.wyden.senate.gov/news/press-releases" } },
+  peoplesearch: { name:"People-search storefront", icon:"🔎", base:120000, rps:2000, scrutiny:0.22, gdprBlocked:true,
+    real:{ claim:"People-search sites both SELL profiles and COLLECT the searches. Spokeo paid $800,000 to settle FTC charges it marketed personal profiles to employers without FCRA protections (2012).", year:2012, source:"https://www.ftc.gov/news-events/news/press-releases/2012/06/spokeo-pay-800000-settle-ftc-charges-company-allegedly-marketed" } },
+  car: { name:"Connected-car telemetry", icon:"🚗", base:650000, rps:11000, scrutiny:0.32,
+    real:{ claim:"GM sold driving-behavior data (hard braking, speeding, trip lengths) to LexisNexis and Verisk; drivers found out when their insurance jumped. NYT investigation, 2024; GM later banned from sharing driver data with consumer reporting agencies.", year:2024, source:"https://www.nytimes.com/2024/03/11/technology/carmakers-driver-tracking-insurance.html" } },
+};
+
+const UPGRADES = {
+  idgraph1: { name:"Identity Graph v1", icon:"🕸", cost:250, effect:{mergeMult:1.6}, desc:"merge 25%→40%",
+    real:{ claim:"Identity resolution graphs are the industry's core tech. LiveRamp's RampID markets 'people-based' identity connecting online and offline records — its own product page is the citation.", year:2024, source:"https://liveramp.com/our-platform/identity/" } },
+  hashmatch: { name:"Hashed-email matching", icon:"#️⃣", cost:3000, effect:{mergeMult:1.5}, desc:"merge 40%→60%",
+    real:{ claim:"Hashed emails are the ad industry's universal join key — Unified ID 2.0 is built on them. Hashing sounds private; matching hashes across databases is the entire point.", year:2024, source:"https://unifiedid.com/" } },
+  cookiesync: { name:"Cookie syncing", icon:"🍪", cost:12000, effect:{rpsMult:1.5}, desc:"all feeds ×1.5",
+    real:{ claim:"Ad-tech firms 'sync' cookie IDs with each other so profiles follow you between companies. Documented in detail in Cracked Labs' 'Corporate Surveillance in Everyday Life' (2017).", year:2017, source:"https://crackedlabs.org/en/corporate-surveillance" } },
+  consentflow: { name:"“Consent-flow optimization”", icon:"✅", cost:40000, effect:{rpsMult:1.5, scrutinyMult:1.15}, desc:"all feeds ×1.5, heat +15%",
+    real:{ claim:"Dark-pattern consent flows — pre-ticked boxes, buried opt-outs, 'confirm-shaming' — are so common the FTC published a staff report on them: 'Bringing Dark Patterns to Light' (2022).", year:2022, source:"https://www.ftc.gov/reports/bringing-dark-patterns-light" } },
+  idgraph2: { name:"Identity Graph v2", icon:"🕷", cost:150000, effect:{mergeMult:1.5}, desc:"merge 60%→90% (max — resolution is never perfect)",
+    real:{ claim:"Acxiom's marketing claims data reaching 2.5 billion people across 60+ countries, with thousands of attributes per person. The scale isn't the conspiracy theory; it's the sales pitch.", year:2024, source:"https://www.acxiom.com/" } },
+  mlinfer: { name:"ML attribute inference", icon:"🧠", cost:900000, effect:{rpsMult:2}, desc:"all feeds ×2 (infer what you didn't collect)",
+    real:{ claim:"You don't need the data point if you can infer it. Target's statisticians famously predicted a teenager's pregnancy from purchase patterns before her father knew (NYT, 2012).", year:2012, source:"https://www.nytimes.com/2012/02/19/magazine/shopping-habits.html" } },
+  offshore: { name:"Offshore processing", icon:"🏝", cost:2500000, effect:{rpsMult:2, scrutinyMult:1.25}, desc:"all feeds ×2, heat +25%",
+    real:{ claim:"Broker supply chains route data through jurisdictions with weaker oversight; the same Cracked Labs report maps the global plumbing.", year:2017, source:"https://crackedlabs.org/en/corporate-surveillance" } },
+};
+
+const SEGMENTS = {
+  gardening: { name:"Gardening enthusiasts", mult:1, sens:0, scrutiny:0,
+    real:{ claim:"Hobby segments sell for pennies per thousand. Experian, Acxiom and peers publish full audience catalogs — 'Gardening' is a stock entry.", year:2024, source:"https://www.experian.com/marketing-services/targeting/data-driven-marketing" } },
+  fitness: { name:"Fitness &amp; wellness intenders", mult:2, sens:0, scrutiny:0.02,
+    real:{ claim:"'Health &amp; wellness' interest segments are standard catalog fare — the gateway between innocuous and medical.", year:2024, source:"https://www.experian.com/marketing-services/targeting/data-driven-marketing" } },
+  expectant: { name:"Expectant parents", mult:6, sens:1, scrutiny:0.14,
+    real:{ claim:"'Expectant Parent' is a named segment in the FTC's 2014 data-broker report, drawn from actual broker catalogs. New parents are the single most valuable life-event to advertisers.", year:2014, source:"https://www.ftc.gov/reports/data-brokers-call-transparency-accountability-report-federal-trade-commission-may-2014" } },
+  diabetes: { name:"“Diabetes interest”", mult:8, sens:1, scrutiny:0.20,
+    real:{ claim:"'Diabetes Interest' appears verbatim in the FTC's 2014 report. A 2023 Duke study bought Americans' mental-health data lists — depression, anxiety, PTSD — from brokers for as little as $0.06/record.", year:2023, source:"https://techpolicy.sanford.duke.edu/data-brokers-and-the-sale-of-americans-mental-health-data/" } },
+  bereaved: { name:"Recently bereaved", mult:10, sens:1, scrutiny:0.25,
+    real:{ claim:"The 2013 Senate Commerce investigation found brokers selling lists like 'Suffering Seniors' and rape victims. Grief is a purchasable audience.", year:2013, source:"https://www.ftc.gov/reports/data-brokers-call-transparency-accountability-report-federal-trade-commission-may-2014" } },
+  payday: { name:"Payday-loan eligible", mult:14, sens:1, scrutiny:0.34,
+    real:{ claim:"Financial-vulnerability segments — 'Rural and Barely Making It', 'Credit Crunched: City Families' — were documented by the Senate Commerce Committee (2013) and the FTC (2014). Desperation is a targeting parameter.", year:2013, source:"https://www.ftc.gov/reports/data-brokers-call-transparency-accountability-report-federal-trade-commission-may-2014" } },
+};
+
+const EVENTS = {
+  priest: { at:20, minT:120, icon:"📰", headline:"A journalist just bought your location data.",
+    body:"A newsletter cross-referenced one of your location feeds with a dating app and outed a priest. Your name is in paragraph four.",
+    real:{ claim:"In 2021, a Catholic newsletter bought commercially available location data and used Grindr app signals to out Monsignor Jeffrey Burrill, who resigned. Nobody hacked anything — the data was for sale.", year:2021, source:"https://en.wikipedia.org/wiki/Jeffrey_Burrill" },
+    choices:[
+      {label:"📄 Issue a statement (“we have robust privacy practices”)", fx:s=>{s.scrutiny=Math.max(0,s.scrutiny-4); log("Issued a statement. It worked, which is the disturbing part.");}},
+      {label:"🤫 Say nothing. News cycles end.", fx:s=>{s.scrutiny+=6; log("Said nothing. The cycle moved on anyway.");}}
+    ]},
+  senate: { at:35, minT:240, icon:"🏛", headline:"A Senate letter has arrived.",
+    body:"Twelve pointed questions about your data sources, signed by three senators. Responses are voluntary-ish.",
+    real:{ claim:"Sen. Wyden's office has repeatedly sent oversight letters to data brokers about location and health data sales; responses are routinely evasive. The letters are public.", year:2023, source:"https://www.wyden.senate.gov/news/press-releases" },
+    choices:[
+      {label:"📬 Send 40 pages of nothing", fx:s=>{s.scrutiny=Math.max(0,s.scrutiny-8); log("Sent 40 pages of nothing. Legal billed 60 hours.");}}
+    ]},
+  kochava: { at:50, minT:360, icon:"⚖️", headline:"The FTC is suing you over location data sold near clinics.",
+    body:"The complaint says your data can trace individuals to reproductive-health clinics, shelters, and places of worship.",
+    real:{ claim:"FTC v. Kochava (filed 2022) alleged exactly this. Settled May 2026 with business-practice changes and NO monetary penalty. Four years of litigation, zero dollars. The game's settlement is harsher than reality.", year:2026, source:"https://www.ftc.gov/legal-library/browse/cases-proceedings/ftc-v-kochava-inc" },
+    choices:[
+      {label:"💸 Settle — 2% of lifetime revenue. A line-item.", fx:s=>{const f=s.lifeRevenue*0.02*s.fineMult; s.money=Math.max(0,s.money-f); s.fines+=f; s.scrutiny=Math.max(0,s.scrutiny-25); log(`Settled for ${fmt$(f)}. Booked under 'regulatory expenses'.`);}},
+      {label:"🥊 Fight it in court for years", fx:s=>{s.scrutiny+=10; s.fightingFTC=true; log("Motion to dismiss filed. Scrutiny stays warm, wallet stays closed.");}}
+    ]},
+  xmode: { at:65, minT:450, icon:"🚫", headline:"Regulators just banned your location-data line.",
+    body:"An FTC order prohibits you from selling sensitive location data. Your App Location SDK feed is dead.",
+    real:{ claim:"The FTC's 2024 orders against X-Mode/Outlogic and InMarket banned them from selling sensitive location data — the agency's first such bans. The companies kept operating.", year:2024, source:"https://www.ftc.gov/news-events/news/press-releases/2024/01/ftc-order-prohibits-data-broker-x-mode-social-outlogic-selling-sensitive-location-data" },
+    choices:[
+      {label:"✔️ Comply. Lose the SDK feed, keep everything else.", fx:s=>{s.feedDisabled.sdk=true; s.scrutiny=Math.max(0,s.scrutiny-15); log("SDK feed shut down. The other five lines didn't notice.");}},
+      {label:"🪆 Reorganize the feed under a new subsidiary ($500k)", fx:s=>{s.money=Math.max(0,s.money-500000); s.scrutiny+=12; log("New entity, same SDK. Compliance is a naming exercise.");}, cost:500000}
+    ]},
+  breach: { at:70, minT:520, icon:"💀", headline:"Your database just leaked.",
+    body:"All of it. A hacking forum is selling your crown jewels for $80. Brokers get breached too — you were a single point of failure for millions of people who never heard of you.",
+    real:{ claim:"National Public Data, a background-check broker, was breached in 2024 — billions of rows including SSNs. It had also published its own passwords. The company filed for bankruptcy; the data is still out there.", year:2024, source:"https://krebsonsecurity.com/2024/08/national-public-data-published-its-own-passwords/" },
+    choices:[
+      {label:"🔒 “We take your security seriously” (unlocks the button)", fx:s=>{s.securityUnlocked=true; s.scrutiny+=8; log("Security-seriously button unlocked. The data remains leaked.");}}
+    ]},
+};
+
+/* ---- the real-catalog exhibit (sources: FTC 2014 report; Senate Commerce 2013; Duke 2023; broker marketing) ---- */
+const CATALOG = [
+  ["Expectant Parent","FTC data-broker report, 2014"],
+  ["Diabetes Interest","FTC data-broker report, 2014"],
+  ["Cholesterol Focus","FTC data-broker report, 2014"],
+  ["Smoker in Household","FTC data-broker report, 2014"],
+  ["Rural and Barely Making It","Senate Commerce investigation, 2013"],
+  ["Credit Crunched: City Families","Senate Commerce investigation, 2013"],
+  ["Suffering Seniors","Senate Commerce investigation, 2013"],
+  ["Consumers with depression (avg $0.06–$0.20/record)","Duke Univ. study on mental-health data sales, 2023"],
+  ["Consumers with anxiety","Duke Univ. study, 2023"],
+  ["Consumers with PTSD","Duke Univ. study, 2023"],
+  ["New Movers","Standard broker catalogs (Experian/Acxiom), ongoing"],
+  ["Recently Divorced","Life-event segments, broker catalogs"],
+  ["Empty Nesters","Life-event segments, broker catalogs"],
+  ["Underbanked Consumers","Financial-vulnerability segments, FTC 2014"],
+  ["Payday Loan Responders","Direct-mail list brokers, documented FTC 2014"],
+  ["Gambling / Casino Interest","Standard broker catalogs"],
+  ["Plus-Size Apparel Buyers","FTC data-broker report, 2014"],
+  ["Bible Lifestyle","FTC data-broker report, 2014 (religion is a sellable attribute)"],
+  ["Hispanic Payday Loan Responders","Senate/press documentation of ethnic-financial cross-lists"],
+  ["Allergy Sufferers","FTC data-broker report, 2014"],
+];
+
+const COMPANY_NAMES = ["Veraxion","TrustLayer Analytics","Insight Loop","Claritude","DataHarbor Group","Signalyn","Provenant","AudienceWorks","Nexafile","TruNorth Data Partners"];
+const PRESS_BITS = {
+  a:["We take your privacy seriously.","Nothing is more important to us than your trust.","We hold ourselves to the highest standards.","Transparency is a core value at"],
+  b:["A small subset of records may have been involved.","We have found no evidence of misuse.","This reflects an industry-wide practice.","Our practices comply with all applicable laws."],
+  c:["We have engaged a leading third-party firm.","We are strengthening our already robust controls.","We welcome a constructive dialogue with regulators.","We remain committed to responsible innovation."]
+};
+/* ---------------- STATE (RAM only, dies on refresh — by design) ---------------- */
+const S = {
+  jur:"US", fineMult:1,
+  money:250, records:0, lifeRecords:0, profiles:0,
+  lifeRevenue:0, fines:0, scrutiny:0,
+  feeds:Object.fromEntries(Object.keys(FEEDS).map(k=>[k,0])),
+  feedDisabled:{}, upgrades:{}, selling:{gardening:true},
+  mergeMult:1, rpsMult:1, scrutinyMult:1,
+  rebrands:0, names:["Bulk Data Holdings LLC"],
+  pressCd:0, secCd:0, securityUnlocked:false, fightingFTC:false,
+  firedEvents:{}, choicesLog:[], paydayClicks:0, pressCount:0,
+  startedAt:0, won:false,
+};
+function log(msg){ S.choicesLog.push(msg); }
+
+/* ---------------- economy (pure — no DOM in here; testable) ---------------- */
+function feedCost(k){ return FEEDS[k].base * Math.pow(COST_GROWTH, S.feeds[k]); }
+function mergeEff(){ return Math.min(0.90, 0.25 * S.mergeMult); }
+function rps(){
+  let r = 0;
+  for (const k in FEEDS) if (!S.feedDisabled[k]) r += FEEDS[k].rps * S.feeds[k];
+  return r * S.rpsMult * (1 + REBRAND_BOOST * S.rebrands);
+}
+function segMultSum(){
+  let m = 0;
+  for (const k in SEGMENTS) if (S.selling[k]) m += SEGMENTS[k].mult;
+  return m;
+}
+function revPerSec(){
+  let r = 1 + S.profiles * REV_RATE * segMultSum(); // $1/s "consulting" floor — no softlocks
+  if (S.feeds.peoplesearch) r += 40 * S.feeds.peoplesearch; // storefront sells retail too
+  if (S.scrutiny >= 100) r *= 0.5;
+  return r;
+}
+function scrutPerSec(){
+  // heat per feed TYPE, scaled by 1+log10(count): the 40th car feed angers
+  // journalists less than the 1st. Segments add flat heat while selling.
+  let h = 0;
+  for (const k in FEEDS){ const n = S.feeds[k];
+    if (n > 0 && !S.feedDisabled[k]) h += FEEDS[k].scrutiny * (1 + Math.log10(n)); }
+  for (const k in SEGMENTS) if (S.selling[k]) h += SEGMENTS[k].scrutiny * (S.jur==="EU" && SEGMENTS[k].sens ? 1.5 : 1);
+  return h * S.scrutinyMult;
+}
+function tickEconomy(dt){
+  const inflow = rps() * dt;
+  S.lifeRecords += inflow;
+  const capFactor = S.scrutiny >= 100 ? 0.5 : 1;
+  const merged = inflow * mergeEff() * capFactor;   // profiles/sec = inflow × efficiency
+  S.records += inflow - merged;                     // the rest piles up, visibly unresolved
+  S.profiles += merged;
+  const rev = revPerSec() * dt;
+  S.money += rev; S.lifeRevenue += rev;
+  S.scrutiny = Math.max(0, Math.min(110, S.scrutiny + (scrutPerSec() - SCRUT_DECAY) * dt));
+  S.pressCd = Math.max(0, S.pressCd - dt); S.secCd = Math.max(0, S.secCd - dt);
+}
+/* buying (pure) */
+function buyFeed(k){ const c = feedCost(k);
+  if (S.money < c || S.feedDisabled[k] || (S.jur==="EU" && FEEDS[k].gdprBlocked)) return false;
+  S.money -= c; S.feeds[k]++; if (S.feeds[k]===1) log(`Acquired: ${FEEDS[k].name}`); return true; }
+function buyUpgrade(k){ const u = UPGRADES[k]; if (S.upgrades[k] || S.money < u.cost) return false;
+  S.money -= u.cost; S.upgrades[k] = true;
+  const fx = u.effect;
+  if (fx.mergeMult){ // reprocess the backlog too — "rerunning historical data" is real
+    S.mergeMult *= fx.mergeMult;
+    const re = S.records * mergeEff() * 0.5; S.records -= re; S.profiles += re;
+  }
+  if (fx.rpsMult) S.rpsMult *= fx.rpsMult;
+  if (fx.scrutinyMult) S.scrutinyMult *= fx.scrutinyMult;
+  log(`Installed: ${u.name}`); return true; }
+function toggleSegment(k){ S.selling[k] = !S.selling[k];
+  if (S.selling[k]){ log(`Started selling: ${SEGMENTS[k].name.replace(/&amp;/g,"&")}`); if (k==="payday") S.paydayClicks++; } return true; }
+function doRebrand(){ if (S.rebrands >= REBRAND_MAX || S.scrutiny < 60) return false;
+  S.rebrands++; S.scrutiny = 0;
+  const used = new Set(S.names);
+  const pool = COMPANY_NAMES.filter(n=>!used.has(n));
+  S.names.push(pool[Math.floor(Math.random()*pool.length)] || ("Meridian Data " + S.rebrands));
+  log(`Rebranded to ${S.names.at(-1)}. Same graph, new logo.`); return true; }
+function doPress(){ if (S.pressCd > 0) return false; S.pressCd = PRESS_CD; S.pressCount++;
+  S.scrutiny = Math.max(0, S.scrutiny - PRESS_DROP);
+  const p = a=>a[Math.floor(Math.random()*a.length)];
+  return `“${p(PRESS_BITS.a)} ${p(PRESS_BITS.b)} ${p(PRESS_BITS.c)}”`; }
+
+/* ---------------- formatting ---------------- */
+function fmt(n){ if (n<1e3) return Math.floor(n).toString();
+  const u=[["B",1e9],["M",1e6],["k",1e3]]; for (const [s,v] of u) if (n>=v) return (n/v).toFixed(n>=10*v?1:2)+s; }
+function fmt$(n){ return "$"+fmt(Math.max(0,n)); }
+
+/* ---------------- DOM ---------------- */
+const $ = id => document.getElementById(id);
+function realCard(r){ return `<details class="real"><summary>this is documented</summary><div class="card">${r.claim} (${r.year}) <a href="${r.source}" target="_blank" rel="noopener">source</a></div></details>`; }
+
+function buildShop(){
+  $("feeds").innerHTML = Object.entries(FEEDS).map(([k,f])=>{
+    const blocked = S.jur==="EU" && f.gdprBlocked;
+    return `<div class="item owned-0" id="feed-${k}">
+      <div class="row"><span class="name">${f.icon} ${f.name}</span><span class="spacer"></span>
+        <span class="meta">×<b id="fn-${k}">0</b> · ${fmt(f.rps)}/s each</span></div>
+      <div class="row" style="margin-top:6px">
+        ${blocked ? `<span class="meta">🇪🇺 unbuyable under GDPR — no lawful basis you'd survive</span>`
+                  : `<button class="buy" data-feed="${k}" id="fb-${k}">buy ${fmt$(f.base)}</button>`}
+      </div>${realCard(f.real)}</div>`; }).join("");
+  $("upgrades").innerHTML = Object.entries(UPGRADES).map(([k,u])=>
+    `<div class="item" id="up-${k}"><div class="row"><span class="name">${u.icon} ${u.name}</span>
+      <span class="spacer"></span><span class="meta">${u.desc}</span></div>
+      <div class="row" style="margin-top:6px"><button class="buy" data-upgrade="${k}" id="ub-${k}">buy ${fmt$(u.cost)}</button></div>
+      ${realCard(u.real)}</div>`).join("");
+  $("segments").innerHTML = Object.entries(SEGMENTS).map(([k,g])=>
+    `<div class="item seg" id="seg-${k}"><div class="row"><span class="name">${g.name}</span><span class="spacer"></span>
+      <span class="sens ${g.sens?"hi":""}">${g.sens?"SENSITIVE · pays ×"+g.mult:"×"+g.mult}</span></div>
+      <div class="row" style="margin-top:6px"><button class="buy" data-segment="${k}" aria-pressed="${!!S.selling[k]}" id="sb-${k}">${S.selling[k]?"selling ✓":"sell it"}</button>
+      ${g.scrutiny?`<span class="meta">+heat</span>`:""}</div>${realCard(g.real)}</div>`).join("");
+}
+
+function render(){
+  $("hRecords").textContent = fmt(S.records);
+  $("hRps").textContent = fmt(rps());
+  $("hProfiles").textContent = fmt(S.profiles);
+  $("hMerge").textContent = Math.round(mergeEff()*100);
+  $("hMoney").textContent = fmt(S.money);
+  $("hRevs").textContent = fmt(revPerSec());
+  $("hScrut").textContent = Math.floor(S.scrutiny);
+  $("scrutfill").style.width = Math.min(100,S.scrutiny)+"%";
+  const ratio = S.lifeRevenue>0 ? 100*S.fines/S.lifeRevenue : 0;
+  $("hRatio").textContent = ratio===0 ? "0.0%" : ratio<0.1 ? "<0.1% (even better)" : ratio.toFixed(1)+"%";
+  $("coName").textContent = S.names.at(-1);
+  $("investigated").classList.toggle("hidden", S.scrutiny < 100);
+  for (const k in FEEDS){
+    const b = $("fb-"+k); const c = feedCost(k);
+    $("fn-"+k).textContent = S.feeds[k];
+    $("feed-"+k).classList.toggle("owned-0", S.feeds[k]===0);
+    if (b){ b.textContent = S.feedDisabled[k] ? "BANNED" : "buy "+fmt$(c);
+      b.disabled = S.feedDisabled[k] || S.money < c; }
+  }
+  for (const k in UPGRADES){
+    const b = $("ub-"+k);
+    if (S.upgrades[k]){ b.textContent = "installed ✓"; b.disabled = true; }
+    else b.disabled = S.money < UPGRADES[k].cost;
+  }
+  const rb = $("btnRebrand");
+  rb.disabled = S.rebrands >= REBRAND_MAX || S.scrutiny < 60;
+  $("rebrandsLeft").textContent = REBRAND_MAX - S.rebrands;
+  rb.title = S.scrutiny < 60 ? "Available at scrutiny ≥ 60 — you rebrand AFTER the scandal" : "Keep the multipliers. Lose the name. Reset the heat.";
+  $("btnPress").disabled = S.pressCd > 0;
+  $("btnPress").title = "Lowers scrutiny slightly. In real life this works depressingly well.";
+  if (S.securityUnlocked){ const sb=$("btnSecurity"); sb.classList.remove("hidden"); sb.disabled = S.secCd>0; }
+}
+
+/* ---------------- events ---------------- */
+const eventDlg = $("eventDlg");
+function checkEvents(){
+  const elapsed = (Date.now() - S.startedAt) / 1000;
+  for (const [k,ev] of Object.entries(EVENTS)){
+    if (!S.firedEvents[k] && S.scrutiny >= ev.at && elapsed >= ev.minT){
+      S.firedEvents[k] = true; showEvent(k, ev); break;
+    }
+  }
+}
+function showEvent(k, ev){
+  $("evTitle").textContent = ev.icon+" "+ev.headline;
+  $("evBody").textContent = ev.body;
+  $("evReal").innerHTML = `${ev.real.claim} (${ev.real.year}) <a href="${ev.real.source}" target="_blank" rel="noopener">source</a>`;
+  const box = $("evChoices"); box.innerHTML = "";
+  ev.choices.forEach(ch=>{
+    const b = document.createElement("button");
+    b.textContent = ch.label;
+    if (ch.cost && S.money < ch.cost) b.disabled = true;
+    b.onclick = ()=>{ ch.fx(S); log(`Event '${ev.headline}' → ${ch.label}`); eventDlg.close(); render(); };
+    box.appendChild(b);
+  });
+  eventDlg.showModal();
+}
+eventDlg.addEventListener("cancel", e=>e.preventDefault()); // must choose — regulators don't Esc
+
+/* ---------------- the Mirror (session data ONLY: choices + Date() — nothing else) ---------------- */
+function buildMirrorData(){
+  const now = new Date();
+  const mins = Math.max(1, Math.round((Date.now()-S.startedAt)/60000));
+  const feedsOwned = Object.keys(FEEDS).filter(k=>S.feeds[k]>0).map(k=>FEEDS[k].name);
+  const sens = Object.keys(SEGMENTS).filter(k=>S.selling[k] && SEGMENTS[k].sens).map(k=>SEGMENTS[k].name.replace(/&amp;/g,"&"));
+  return {
+    id: "SUBJ-"+Math.floor(Math.random()*9e6+1e6),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown",
+    hour: now.getHours(), day: now.toLocaleDateString(undefined,{weekday:"long"}),
+    device: matchMedia("(pointer:coarse)").matches ? "mobile device" : "desktop/laptop",
+    lang: navigator.language || "unknown",
+    mins, feedsOwned, sens,
+    payday: S.paydayClicks, press: S.pressCount, rebrands: S.names.slice(0,-1),
+    fought: S.fightingFTC, jur: S.jur,
+    profiles: S.profiles, ratio: S.lifeRevenue>0 ? (100*S.fines/S.lifeRevenue).toFixed(1) : "0.0",
+  };
+}
+function mirrorText(d){
+  const lines = [
+    `═══ RESOLVED PROFILE ${d.id} ═══`,
+    `TIMEZONE .......... ${d.tz}`,
+    `ACTIVE HOURS ...... around ${d.hour}:00 on a ${d.day}`,
+    `DEVICE CLASS ...... ${d.device}`,
+    `LOCALE ............ ${d.lang}`,
+    `SESSION LENGTH .... ${d.mins} minutes, continuous`,
+    `DATA APPETITE ..... ${d.feedsOwned.length}/6 feed types acquired`,
+    d.feedsOwned.length ? `                    (${d.feedsOwned.join("; ")})` : null,
+    `SENSITIVITY ....... ${d.sens.length ? "sold "+d.sens.length+" sensitive segments: "+d.sens.join(", ") : "sold no sensitive segments (rare)"}`,
+    d.payday ? `RISK FLAG ......... opted into "payday-loan eligible" ×${d.payday}` : null,
+    `PR INSTINCT ....... ${d.press} press release${d.press===1?"":"s"} issued`,
+    d.rebrands.length ? `FORMER NAMES ...... ${d.rebrands.join(" → ")}` : null,
+    d.fought ? `LITIGATION ........ chose to fight the FTC rather than pay` : null,
+    `JURISDICTION ...... ${d.jur} rules, by choice`,
+    `FINES/REVENUE ..... ${d.ratio}% (a rounding error, as designed)`,
+    `═══ END PROFILE — 1 of ${fmt(d.profiles)} ═══`,
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+function showWin(){
+  S.won = true;
+  const d = buildMirrorData();
+  const text = mirrorText(d);
+  const el = $("mirror");
+  $("mirrorCoda").textContent =
+    `This profile took you ${d.mins} minutes to build. You had a browser tab. `+
+    `The real ones have thousands of data points per person and had years. YOU ARE IN ONE. `+
+    `Everything above came from your clicks and your clock — this page collected none of it. It's in RAM. View source.`;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches){ el.textContent = text; }
+  else { // typewriter fill
+    el.textContent = ""; let i = 0;
+    const t = setInterval(()=>{ el.textContent = text.slice(0, i+=7); if (i>=text.length) clearInterval(t); }, 16);
+  }
+  $("winDlg").showModal();
+}
+
+/* ---------------- newspaper front page (canvas) ---------------- */
+function drawNewspaper(){
+  const c = $("newsCanvas"), x = c.getContext("2d");
+  const W=c.width, H=c.height;
+  x.fillStyle="#f7f3e8"; x.fillRect(0,0,W,H);
+  x.fillStyle="#111"; x.textAlign="center";
+  x.font="bold 64px Georgia, serif"; x.fillText("THE DAILY LEDGER", W/2, 80);
+  x.font="16px Georgia, serif"; x.fillText(new Date().toDateString()+"  ·  BUSINESS SECTION  ·  $2.50", W/2, 110);
+  x.fillRect(40,125,W-80,4);
+  const name = S.names.at(-1);
+  x.font="bold 44px Georgia, serif";
+  wrap(x, `${name.toUpperCase()} HITS "TOTAL COVERAGE" OF 300 MILLION AMERICANS`, W/2, 185, W-100, 50);
+  x.font="italic 20px Georgia, serif";
+  x.fillText("Investors cheer; nobody else was asked", W/2, 320);
+  x.textAlign="left"; x.font="17px Georgia, serif"; x.fillStyle="#222";
+  const scandals = S.choicesLog.filter(l=>l.startsWith("Event")||l.startsWith("Rebranded")||l.startsWith("Settled"));
+  const facts = [
+    `The firm — previously known as ${S.names.length>1 ? S.names.slice(0,-1).join(", ") : "nothing else; remarkably, it never needed a rebrand"} — `+
+    `reported lifetime revenue of ${fmt$(S.lifeRevenue)} against total fines of ${fmt$(S.fines)}, a ratio of ${S.lifeRevenue>0?(100*S.fines/S.lifeRevenue).toFixed(1):"0"}%.`,
+    `"The fines are simply a cost of doing business," said an analyst. "That's not a criticism. That's the business model."`,
+    ...scandals.slice(0,4).map(s=>"• "+s),
+    `Asked for comment, the company said it takes your privacy seriously.`,
+  ];
+  let y=370; for (const f of facts){ y = wrap(x, f, 60, y, W-120, 26) + 14; }
+  x.fillStyle="#666"; x.font="14px Georgia, serif"; x.textAlign="center";
+  x.fillText("Generated locally by Broker Tycoon — a game that collected nothing. Every scandal above is modeled on a cited real case.", W/2, H-30);
+  $("newsSave").href = c.toDataURL("image/png");
+  function wrap(x,t,cx,y,maxW,lh){ const words=t.split(" "); let line="";
+    for (const w of words){ if (x.measureText(line+w).width>maxW){ x.fillText(line,cx,y); y+=lh; line=w+" "; } else line+=w+" "; }
+    x.fillText(line,cx,y); return y; }
+}
+
+/* ---------------- share link (?run= of a FINISHED run only) ---------------- */
+function runSummaryString(){
+  const d = { n:S.names.at(-1), f:S.names.length-1, min:Math.round((Date.now()-S.startedAt)/60000),
+    rev:Math.round(S.lifeRevenue), fin:Math.round(S.fines), p:Math.round(S.profiles), jur:S.jur };
+  return btoa(JSON.stringify(d));
+}
+function readSharedRun(){
+  const q = new URLSearchParams(location.search).get("run");
+  if (!q) return;
+  try{
+    const d = JSON.parse(atob(q));
+    const el = $("runSummary"); el.classList.remove("hidden");
+    el.innerHTML = `<div class="name">📊 Someone shared a finished run:</div>
+      <div class="meta">"${String(d.n).slice(0,40)}" (${d.jur==="EU"?"EU":"US"} mode) reached ${fmt(d.p)} profiles in ${d.min} min. `+
+      `Revenue ${fmt$(d.rev)}, fines ${fmt$(d.fin)} — ratio ${d.rev>0?(100*d.fin/d.rev).toFixed(1):0}%. Former names: ${d.f}.</div>`;
+  }catch(e){/* malformed share links are ignored, not parsed further */}
+}
+
+/* ---------------- catalog browser ---------------- */
+function buildCatalog(filter=""){
+  const f = filter.toLowerCase();
+  $("catalogList").innerHTML = CATALOG
+    .filter(([n,s])=>!f || n.toLowerCase().includes(f) || s.toLowerCase().includes(f))
+    .map(([n,s])=>`<div class="item"><div class="name">${n}</div><div class="meta">${s}</div></div>`).join("")
+    || `<p class="silent">No matches. The real catalogs have thousands more.</p>`;
+}
+
+/* ---------------- sanity self-check on load ---------------- */
+function selfCheck(){
+  const errs = [];
+  const all = [...Object.values(FEEDS), ...Object.values(UPGRADES), ...Object.values(SEGMENTS), ...Object.values(EVENTS)];
+  for (const it of all){
+    if (!it.real || !it.real.claim || !it.real.year || !/^https?:\/\//.test(it.real.source||""))
+      errs.push("missing/invalid REAL citation on: "+(it.name||it.headline));
+  }
+  for (const k in FEEDS){ // cost curve monotonic
+    const c0=FEEDS[k].base, c1=c0*COST_GROWTH, c2=c1*COST_GROWTH;
+    if (!(c0<c1 && c1<c2)) errs.push("non-monotonic cost curve: "+k);
+  }
+  if (!(WIN_PROFILES > 0)) errs.push("win condition unreachable");
+  try { mirrorText(buildMirrorData()); } catch(e){ errs.push("mirror failed to render: "+e.message); }
+  const el = $("selfcheck");
+  if (errs.length){ el.textContent = "self-check FAILED: "+errs.join("; "); el.className="fail"; console.error(errs); }
+  else el.textContent = "self-check ✓ ("+all.length+" citations present, curves monotonic, mirror renders offline)";
+  return errs.length === 0;
+}
+
+/* ---------------- wiring ---------------- */
+document.querySelectorAll("#start .jur").forEach(b=>b.addEventListener("click", ()=>{
+  S.jur = b.dataset.jur;
+  if (S.jur==="EU"){ S.fineMult = 20; log("Chose EU mode. Two feeds were never on the table."); }
+  else log("Chose US mode. Everything is on the table.");
+  S.startedAt = Date.now();
+  $("start").remove();
+  buildShop(); render();
+}));
+
+document.body.addEventListener("click", e=>{
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.feed){ if (buyFeed(b.dataset.feed)){ b.classList.remove("pulse"); void b.offsetWidth; b.classList.add("pulse"); render(); } }
+  else if (b.dataset.upgrade){ if (buyUpgrade(b.dataset.upgrade)) render(); }
+  else if (b.dataset.segment){ toggleSegment(b.dataset.segment);
+    b.setAttribute("aria-pressed", !!S.selling[b.dataset.segment]);
+    b.textContent = S.selling[b.dataset.segment] ? "selling ✓" : "sell it"; render(); }
+});
+$("btnPress").addEventListener("click", ()=>{ const t = doPress(); if (t){ $("pressOut").textContent = t; render(); } });
+$("btnSecurity").addEventListener("click", ()=>{ if (S.secCd>0) return; S.secCd=45; S.scrutiny=Math.max(0,S.scrutiny-7); log("Took security seriously (via press release)."); render(); });
+$("btnRebrand").addEventListener("click", ()=>{ if (doRebrand()) render(); });
+$("btnCatalog").addEventListener("click", ()=>{ buildCatalog(); $("catalogDlg").showModal(); });
+$("catSearch").addEventListener("input", e=>buildCatalog(e.target.value));
+$("catClose").addEventListener("click", ()=>$("catalogDlg").close());
+$("btnExit").addEventListener("click", ()=>$("exitDlg").showModal());
+$("exitClose").addEventListener("click", ()=>$("exitDlg").close());
+$("btnNews").addEventListener("click", ()=>{ $("newsWrap").classList.remove("hidden"); drawNewspaper(); });
+$("btnShare").addEventListener("click", async e=>{
+  const url = location.origin + location.pathname + "?run=" + runSummaryString();
+  try{ await navigator.clipboard.writeText(url); e.target.textContent = "🔗 Copied!"; }
+  catch(_){ prompt("Copy your run link:", url); }
+});
+
+const LEGAL = [
+  "“It’s not a sale, it’s a ‘transfer to a marketing partner.’ Approved.”",
+  "“The consent was obtained. Page 47, paragraph 12. Approved.”",
+  "“Health data? No — ‘wellness interest signals.’ Approved.”",
+  "“We don’t track people. We track devices that people carry. Approved.”",
+  "“The fine is smaller than the revenue it addresses. Proceed.”",
+];
+
+/* ---------------- main loop: one interval, honest arithmetic ---------------- */
+let last = performance.now(), acc = 0, legalIdx = 0;
+setInterval(()=>{
+  if (!S.startedAt || S.won) return;
+  const now = performance.now();
+  const dt = Math.min(2, (now - last)/1000); last = now;
+  tickEconomy(dt);
+  checkEvents();
+  acc += dt;
+  if (acc >= 0.25){ acc = 0; render();
+    $("clock").textContent = Math.floor((Date.now()-S.startedAt)/60000)+"m "+Math.floor((Date.now()-S.startedAt)/1000%60)+"s";
+    if (Math.random() < 0.004){ $("legalQuote").textContent = LEGAL[++legalIdx % LEGAL.length]; }
+  }
+  if (S.profiles >= WIN_PROFILES) showWin();
+}, 100);
+last = performance.now();
+
+readSharedRun();
+selfCheck();
+
+/* headless hook for balance testing (used by the repo's test script; harmless in browser) */
+window.__BT = { S, FEEDS, UPGRADES, SEGMENTS, EVENTS, tickEconomy, buyFeed, buyUpgrade, toggleSegment, doRebrand, feedCost, rps, revPerSec, mergeEff, WIN_PROFILES };
+</script>
+</body>
+</html>
