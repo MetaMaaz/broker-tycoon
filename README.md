@@ -28,7 +28,7 @@ Tone rule, enforced: no conspiracy framing anywhere. The industry's own marketin
 
 Win the game and it proudly displays your crown jewel: one fully-resolved profile — assembled entirely from *your* session. Your timezone, the hour you played, the feeds you bought, how many times you toggled the payday-loan segment, every name your company hid behind. Then it tells you the truth: this took you 14 minutes and a browser tab; the real ones have thousands of data points per person and had years, and you are in one.
 
-The irony is load-bearing, so the game proves it: **this page collects nothing.** No analytics, no cookies, no localStorage, no network calls. The dossier is built from in-memory choices plus `Date()`. Refresh and it's gone. View source.
+And it proves the point: **this page collects nothing.** No analytics, no cookies, no localStorage, no network calls. The dossier is built from in-memory choices plus `Date()`. Refresh and it's gone. View source.
 
 ## No retention mechanics — that's the design statement
 
